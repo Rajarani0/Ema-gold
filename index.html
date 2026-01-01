@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAUUSD EMA 20/50 Bot</title>
+
+<style>
+body{margin:0;font-family:Arial;background:#0b0c10;color:#fff}
+.container{max-width:420px;margin:auto;padding:20px}
+.card{background:#121417;border-radius:12px;padding:15px;margin-bottom:15px}
+h1{text-align:center;color:#ffd700}
+input,select,button{
+    width:100%;padding:10px;margin-top:8px;
+    border:none;border-radius:6px;font-size:14px
+}
+button{background:#ffd700;font-weight:bold}
+.price{font-size:28px;text-align:center}
+.signal{font-size:22px;text-align:center;font-weight:bold}
+.buy{color:#00ff99}.sell{color:#ff4d4d}.wait{color:#999}
+.small{text-align:center;color:#aaa;font-size:12px}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>🥇 XAUUSD EMA Bot</h1>
+
+<div class="card">
+<input id="apiKey" placeholder="TwelveData API Key">
+<input id="tgToken" placeholder="Telegram Bot Token">
+<input id="tgChat" placeholder="Telegram Chat ID">
+
+<select id="tf">
+<option value="5min">M5</option>
+<option value="15min">M15</option>
+<option value="30min">M30</option>
+<option value="1h">H1</option>
+</select>
+
+<button onclick="saveSettings()">Save Settings</button>
+</div>
+
+<div class="card">
+<div class="price" id="price">--</div>
+<div class="small">Live XAUUSD Price</div>
+</div>
+
+<div class="card">
+<div class="signal wait" id="signal">WAIT</div>
+<div class="small">EMA 20 / EMA 50</div>
+</div>
+
+<div class="card small">
+Auto SL/TP • EMA Strategy • Telegram Alert
+</div>
+
+</div>
+
+<script>
+let lastSignal = "";
+
+function saveSettings(){
+    localStorage.setItem("apiKey",apiKey.value);
+    localStorage.setItem("tgToken",tgToken.value);
+    localStorage.setItem("tgChat",tgChat.value);
+    localStorage.setItem("tf",tf.value);
+    alert("Settings Saved");
+}
+
+apiKey.value = localStorage.getItem("apiKey") || "";
+tgToken.value = localStorage.getItem("tgToken") || "";
+tgChat.value = localStorage.getItem("tgChat") || "";
+tf.value = localStorage.getItem("tf") || "15min";
+
+function EMA(period, prices){
+    let k = 2/(period+1), ema = prices[0];
+    for(let i=1;i<prices.length;i++)
+        ema = prices[i]*k + ema*(1-k);
+    return ema;
+}
+
+async function sendTelegram(msg){
+    if(!tgToken.value || !tgChat.value) return;
+    let url = `https://api.telegram.org/bot${tgToken.value}/sendMessage?chat_id=${tgChat.value}&text=${encodeURIComponent(msg)}`;
+    fetch(url);
+}
+
+async function loadData(){
+    if(!apiKey.value) return;
+
+    let API = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=${tf.value}&outputsize=100&apikey=${apiKey.value}`;
+
+    try{
+        let res = await fetch(API);
+        let data = await res.json();
+        let closes = data.values.map(v=>+v.close).reverse();
+        let price = closes.at(-1);
+
+        let ema20 = EMA(20,closes);
+        let ema50 = EMA(50,closes);
+
+        price.innerText = price.toFixed(2);
+
+        let newSignal = "WAIT";
+        let sl,tp;
+
+        if(ema20>ema50 && price>ema20){
+            newSignal="BUY";
+            sl = price - 3.0;
+            tp = price + 6.0;
+        }
+        else if(ema20<ema50 && price<ema20){
+            newSignal="SELL";
+            sl = price + 3.0;
+            tp = price - 6.0;
+        }
+
+        signal.innerText = newSignal;
+        signal.className = "signal "+newSignal.toLowerCase();
+
+        if(newSignal!==lastSignal && newSignal!=="WAIT"){
+            sendTelegram(
+`XAUUSD ${newSignal}
+TF: ${tf.value.toUpperCase()}
+Entry: ${price.toFixed(2)}
+SL: ${sl.toFixed(2)}
+TP: ${tp.toFixed(2)}`
+            );
+            lastSignal = newSignal;
+        }
+
+    }catch(e){
+        console.log(e);
+    }
+}
+
+setInterval(loadData,60000);
+</script>
+
+</body>
+</html>
